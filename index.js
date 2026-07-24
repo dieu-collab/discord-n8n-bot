@@ -45,10 +45,71 @@ const discordClient = new Client({
 
 discordClient.once(
   Events.ClientReady,
-  (client) => {
+  async (client) => {
     console.log(
       `Bot Discord đã online: ${client.user.tag}`,
     );
+
+    console.log(
+      'Bot User ID:',
+      client.user.id,
+    );
+
+    console.log(
+      'Số server bot nhìn thấy:',
+      client.guilds.cache.size,
+    );
+
+    console.log(
+      'Danh sách server:',
+      client.guilds.cache.map(
+        (guild) =>
+          `${guild.name} | ${guild.id}`,
+      ),
+    );
+
+    const targetGuild =
+      client.guilds.cache.get(
+        process.env.DISCORD_GUILD_ID,
+      );
+
+    if (!targetGuild) {
+      console.error(
+        'KHÔNG TÌM THẤY SERVER:',
+        process.env.DISCORD_GUILD_ID,
+      );
+    } else {
+      console.log(
+        'ĐÃ TÌM THẤY SERVER:',
+        targetGuild.name,
+        targetGuild.id,
+      );
+    }
+
+    try {
+      const targetChannel =
+        await client.channels.fetch(
+          process.env.DISCORD_CHANNEL_ID,
+        );
+
+      if (!targetChannel) {
+        console.error(
+          'KHÔNG TÌM THẤY KÊNH:',
+          process.env.DISCORD_CHANNEL_ID,
+        );
+      } else {
+        console.log(
+          'ĐÃ TÌM THẤY KÊNH:',
+          targetChannel.name,
+          targetChannel.id,
+        );
+      }
+    } catch (error) {
+      console.error(
+        'BOT KHÔNG TRUY CẬP ĐƯỢC KÊNH:',
+        error.message,
+      );
+    }
   },
 );
 
