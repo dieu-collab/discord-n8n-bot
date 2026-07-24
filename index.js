@@ -11,10 +11,8 @@ const {
  * ======================================================= */
 
 const requiredVariables = [
-  'DISCORD_TOKEN',
-  'N8N_WEBHOOK_URL',
-  'DISCORD_GUILD_ID',
-  'DISCORD_CHANNEL_ID',
+  'DISCORD_TOKEN'= MTQ4MDYyMjY0NjkwNjU4OTMxOQ.G5bL1j.zjnuR3qUjKhfTLNPPJmbnQL1ounAiIeH1ew-rM,
+  'N8N_WEBHOOK_URL' = https://flow.weha.vn/webhook/196d9536-3bef-4068-bc9f-c34c50228cae,
 ];
 
 const missingVariables =
