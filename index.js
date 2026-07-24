@@ -60,6 +60,16 @@ discordClient.on(
   Events.MessageCreate,
   async (message) => {
     try {
+      console.log('===== CÓ TIN NHẮN DISCORD =====');
+console.log('Server ID:', message.guildId);
+console.log('Channel ID:', message.channelId);
+console.log('Người gửi:', message.author.username);
+console.log('Có phải bot:', message.author.bot);
+console.log('Nội dung:', message.content);
+console.log(
+  'Số ảnh:',
+  message.attachments.size,
+);
       /*
        * Không xử lý tin do bot gửi.
        */
@@ -71,21 +81,35 @@ discordClient.on(
        * Chỉ xử lý tin trong server WEHA TECH.
        */
       if (
-        message.guildId !==
-        process.env.DISCORD_GUILD_ID
-      ) {
-        return;
-      }
+  message.guildId !==
+  process.env.DISCORD_GUILD_ID
+) {
+  console.log(
+    'Bỏ qua vì sai Server ID:',
+    message.guildId,
+    '!=',
+    process.env.DISCORD_GUILD_ID,
+  );
+
+  return;
+}
 
       /*
        * Chỉ xử lý kênh check-in-out.
        */
-      if (
-        message.channelId !==
-        process.env.DISCORD_CHANNEL_ID
-      ) {
-        return;
-      }
+     if (
+  message.channelId !==
+  process.env.DISCORD_CHANNEL_ID
+) {
+  console.log(
+    'Bỏ qua vì sai Channel ID:',
+    message.channelId,
+    '!=',
+    process.env.DISCORD_CHANNEL_ID,
+  );
+
+  return;
+}
 
       const attachments = [
         ...message.attachments.values(),
