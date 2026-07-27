@@ -17,6 +17,26 @@ function readEnvironment(name, fallback = '') {
   return String(process.env[name] ?? fallback).trim();
 }
 
+/*
+ * Chuyển chuỗi:
+ * "123,456,789"
+ *
+ * thành:
+ * ["123", "456", "789"]
+ */
+function readIdList(name, fallback = '') {
+  const value = readEnvironment(name, fallback);
+
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 const DISCORD_TOKEN =
   readEnvironment('DISCORD_TOKEN');
 
@@ -24,34 +44,41 @@ const N8N_WEBHOOK_URL =
   readEnvironment('N8N_WEBHOOK_URL');
 
 /*
- * Hỗ trợ cả tên mới và tên cũ trên Render.
+ * Hỗ trợ cả:
  *
- * Ưu tiên:
+ * DISCORD_GUILD_IDS
+ * DISCORD_CHANNEL_IDS
+ *
+ * Và tên cũ:
+ *
  * DISCORD_GUILD_ID
  * DISCORD_CHANNEL_ID
- *
- * Nếu chưa có thì dùng:
  * SERVER_ID
  * CHANNEL_ID
  */
-const DISCORD_GUILD_ID =
+const DISCORD_GUILD_IDS = readIdList(
+  'DISCORD_GUILD_IDS',
   readEnvironment(
     'DISCORD_GUILD_ID',
     readEnvironment('SERVER_ID'),
-  );
+  ),
+);
 
-const DISCORD_CHANNEL_ID =
+const DISCORD_CHANNEL_IDS = readIdList(
+  'DISCORD_CHANNEL_IDS',
   readEnvironment(
     'DISCORD_CHANNEL_ID',
     readEnvironment('CHANNEL_ID'),
-  );
+  ),
+);
 
 /*
  * true:
- * Trong server phải tag bot hoặc role bot.
+ * Trong server phải tag tài khoản bot,
+ * tag role bot hoặc reply tin nhắn bot.
  *
  * false:
- * Trong đúng channel được cấu hình, nhắn gì bot cũng xử lý.
+ * Trong các kênh được phép, bot xử lý mọi tin nhắn.
  */
 const REQUIRE_MENTION_IN_GUILD =
   readEnvironment(
@@ -60,9 +87,8 @@ const REQUIRE_MENTION_IN_GUILD =
   ).toLowerCase() !== 'false';
 
 /*
- * Nếu true:
- * Khi người dùng reply vào tin nhắn của bot,
- * bot cũng xem như đã được gọi.
+ * true:
+ * Reply tin của bot cũng được tính là gọi bot.
  */
 const ALLOW_REPLY_TO_BOT =
   readEnvironment(
@@ -71,7 +97,10 @@ const ALLOW_REPLY_TO_BOT =
   ).toLowerCase() !== 'false';
 
 const N8N_TIMEOUT_MS = Number(
-  readEnvironment('N8N_TIMEOUT_MS', '120000'),
+  readEnvironment(
+    'N8N_TIMEOUT_MS',
+    '120000',
+  ),
 );
 
 const requiredVariables = {
@@ -120,7 +149,9 @@ function extractAttachments(message) {
   return [
     ...message.attachments.values(),
   ].map((attachment) => ({
-    id: String(attachment.id ?? ''),
+    id: String(
+      attachment.id ?? '',
+    ),
 
     name: String(
       attachment.name ?? '',
@@ -157,12 +188,13 @@ function extractAttachments(message) {
 }
 
 /*
- * Lấy tất cả role do Discord quản lý đang gắn với bot.
- *
- * Bot role thường là role managed.
+ * Lấy các role được Discord quản lý của bot.
  */
 async function getBotRoleIds(message) {
-  if (!message.guild || !discordClient.user) {
+  if (
+    !message.guild ||
+    !discordClient.user
+  ) {
     return [];
   }
 
@@ -179,7 +211,9 @@ async function getBotRoleIds(message) {
 
     return botMember.roles.cache
       .filter((role) => role.managed)
-      .map((role) => String(role.id));
+      .map((role) =>
+        String(role.id),
+      );
   } catch (error) {
     console.error(
       'Không lấy được role của bot:',
@@ -191,9 +225,9 @@ async function getBotRoleIds(message) {
 }
 
 /*
- * Kiểm tra người dùng có tag:
- * - tài khoản bot;
- * - role của bot.
+ * Nhận cả:
+ * - Tag trực tiếp tài khoản bot.
+ * - Tag role bot.
  */
 async function detectBotMention(message) {
   const botUserId =
@@ -230,8 +264,8 @@ async function detectBotMention(message) {
 }
 
 /*
- * Kiểm tra người dùng có reply trực tiếp
- * vào một tin nhắn của bot hay không.
+ * Kiểm tra người dùng có reply
+ * vào tin nhắn của bot hay không.
  */
 async function isReplyingToBot(message) {
   if (
@@ -268,7 +302,9 @@ function removeBotMentions(
   botUserId,
   botRoleIds = [],
 ) {
-  let result = String(content ?? '');
+  let result = String(
+    content ?? '',
+  );
 
   if (botUserId) {
     result = result.replace(
@@ -291,6 +327,42 @@ function removeBotMentions(
   }
 
   return result.trim();
+}
+
+/*
+ * Kiểm tra server có nằm trong danh sách được phép.
+ *
+ * Danh sách rỗng:
+ * không giới hạn server.
+ */
+function isAllowedGuild(guildId) {
+  if (
+    DISCORD_GUILD_IDS.length === 0
+  ) {
+    return true;
+  }
+
+  return DISCORD_GUILD_IDS.includes(
+    String(guildId ?? ''),
+  );
+}
+
+/*
+ * Kiểm tra channel có nằm trong danh sách được phép.
+ *
+ * Danh sách rỗng:
+ * không giới hạn channel.
+ */
+function isAllowedChannel(channelId) {
+  if (
+    DISCORD_CHANNEL_IDS.length === 0
+  ) {
+    return true;
+  }
+
+  return DISCORD_CHANNEL_IDS.includes(
+    String(channelId ?? ''),
+  );
 }
 
 /* =========================================================
@@ -349,13 +421,18 @@ discordClient.once(
   Events.ClientReady,
   async (client) => {
     console.log('');
-    console.log('====================================');
+    console.log(
+      '====================================',
+    );
+
     console.log(
       `Bot đã online: ${client.user.tag}`,
     );
+
     console.log(
       `Bot User ID: ${client.user.id}`,
     );
+
     console.log(
       `Số server bot nhìn thấy: ${client.guilds.cache.size}`,
     );
@@ -368,10 +445,27 @@ discordClient.once(
       ),
     );
 
-    if (DISCORD_GUILD_ID) {
+    console.log(
+      'Server được phép:',
+      DISCORD_GUILD_IDS.length > 0
+        ? DISCORD_GUILD_IDS
+        : 'Tất cả server',
+    );
+
+    console.log(
+      'Channel được phép:',
+      DISCORD_CHANNEL_IDS.length > 0
+        ? DISCORD_CHANNEL_IDS
+        : 'Tất cả channel',
+    );
+
+    for (
+      const guildId
+      of DISCORD_GUILD_IDS
+    ) {
       const guild =
         client.guilds.cache.get(
-          DISCORD_GUILD_ID,
+          guildId,
         );
 
       if (guild) {
@@ -380,45 +474,41 @@ discordClient.once(
         );
       } else {
         console.warn(
-          'Không tìm thấy server đã cấu hình:',
-          DISCORD_GUILD_ID,
+          'Không tìm thấy server:',
+          guildId,
         );
       }
-    } else {
-      console.log(
-        'Không giới hạn server.',
-      );
     }
 
-    if (DISCORD_CHANNEL_ID) {
+    for (
+      const channelId
+      of DISCORD_CHANNEL_IDS
+    ) {
       try {
         const channel =
           await client.channels.fetch(
-            DISCORD_CHANNEL_ID,
+            channelId,
           );
 
         if (channel) {
           console.log(
             `Đã tìm thấy channel: ${
-              channel.name ?? 'Không có tên'
+              channel.name ??
+              'Không có tên'
             } | ${channel.id}`,
           );
         } else {
           console.warn(
             'Không tìm thấy channel:',
-            DISCORD_CHANNEL_ID,
+            channelId,
           );
         }
       } catch (error) {
         console.error(
-          'Không truy cập được channel:',
+          `Không truy cập được channel ${channelId}:`,
           error.message,
         );
       }
-    } else {
-      console.log(
-        'Không giới hạn channel.',
-      );
     }
 
     console.log(
@@ -436,7 +526,10 @@ discordClient.once(
       N8N_WEBHOOK_URL,
     );
 
-    console.log('====================================');
+    console.log(
+      '====================================',
+    );
+
     console.log('');
   },
 );
@@ -449,9 +542,6 @@ discordClient.on(
   Events.MessageCreate,
   async (message) => {
     try {
-      /*
-       * Fetch đầy đủ partial message nếu cần.
-       */
       if (message.partial) {
         try {
           await message.fetch();
@@ -466,39 +556,48 @@ discordClient.on(
       }
 
       console.log('');
-      console.log('===== CÓ TIN NHẮN DISCORD =====');
+      console.log(
+        '===== CÓ TIN NHẮN DISCORD =====',
+      );
+
       console.log(
         'Server ID:',
         message.guildId ?? 'DM',
       );
+
       console.log(
         'Channel ID:',
         message.channelId,
       );
+
       console.log(
         'Người gửi:',
         message.author.username,
       );
+
       console.log(
         'User ID:',
         message.author.id,
       );
+
       console.log(
         'Có phải bot:',
         message.author.bot,
       );
+
       console.log(
         'Nội dung gốc:',
         message.content,
       );
+
       console.log(
         'Số tệp:',
         message.attachments.size,
       );
 
       /*
-       * Bắt buộc chặn tin do bot gửi.
-       * Nếu bỏ sẽ có vòng lặp bot tự trả lời chính nó.
+       * Chặn tin nhắn do bot gửi,
+       * tránh vòng lặp.
        */
       if (message.author.bot) {
         console.log(
@@ -511,10 +610,6 @@ discordClient.on(
       const isDirectMessage =
         message.guildId === null;
 
-      /*
-       * Kiểm tra tag tài khoản bot
-       * hoặc tag role bot.
-       */
       const mentionInfo =
         await detectBotMention(
           message,
@@ -541,7 +636,7 @@ discordClient.on(
       );
 
       /*
-       * Tin nhắn DM luôn được nhận.
+       * DM luôn được xử lý.
        */
       if (isDirectMessage) {
         console.log(
@@ -554,43 +649,39 @@ discordClient.on(
        */
       if (!isDirectMessage) {
         /*
-         * Lọc đúng server nếu đã cấu hình.
+         * Kiểm tra server.
          */
         if (
-          DISCORD_GUILD_ID &&
-          message.guildId !==
-            DISCORD_GUILD_ID
-        ) {
-          console.log(
-            'Bỏ qua vì sai Server ID:',
+          !isAllowedGuild(
             message.guildId,
-            '!=',
-            DISCORD_GUILD_ID,
-          );
-
-          return;
-        }
-
-        /*
-         * Lọc đúng channel nếu đã cấu hình.
-         */
-        if (
-          DISCORD_CHANNEL_ID &&
-          message.channelId !==
-            DISCORD_CHANNEL_ID
+          )
         ) {
           console.log(
-            'Bỏ qua vì sai Channel ID:',
-            message.channelId,
-            '!=',
-            DISCORD_CHANNEL_ID,
+            'Bỏ qua vì Server ID không nằm trong danh sách được phép:',
+            message.guildId,
           );
 
           return;
         }
 
         /*
-         * Nếu bắt buộc gọi bot:
+         * Kiểm tra channel.
+         */
+        if (
+          !isAllowedChannel(
+            message.channelId,
+          )
+        ) {
+          console.log(
+            'Bỏ qua vì Channel ID không nằm trong danh sách được phép:',
+            message.channelId,
+          );
+
+          return;
+        }
+
+        /*
+         * Nếu bắt buộc tag:
          * - tag tài khoản bot;
          * - tag role bot;
          * - hoặc reply tin của bot.
@@ -604,7 +695,7 @@ discordClient.on(
           !botWasCalled
         ) {
           console.log(
-            'Bỏ qua vì chưa tag tài khoản bot, chưa tag role bot và không reply tin bot.',
+            'Bỏ qua vì chưa tag bot, chưa tag role bot và không reply tin bot.',
           );
 
           return;
@@ -612,7 +703,7 @@ discordClient.on(
       }
 
       /*
-       * Xóa tag bot khỏi nội dung trước khi gửi AI.
+       * Xóa mention bot trước khi gửi AI.
        */
       const cleanContent =
         removeBotMentions(
@@ -627,7 +718,7 @@ discordClient.on(
       );
 
       /*
-       * Không có chữ và không có tệp.
+       * Không có nội dung và không có tệp.
        */
       if (
         !cleanContent &&
@@ -644,7 +735,9 @@ discordClient.on(
         extractAttachments(message);
 
       const payload = {
-        id: String(message.id),
+        id: String(
+          message.id,
+        ),
 
         guild_id: String(
           message.guildId ?? '',
@@ -666,11 +759,13 @@ discordClient.on(
           ),
 
           username: String(
-            message.author.username ?? '',
+            message.author.username ??
+            '',
           ),
 
           global_name: String(
-            message.author.globalName ?? '',
+            message.author.globalName ??
+            '',
           ),
 
           bot: Boolean(
@@ -680,14 +775,15 @@ discordClient.on(
 
         member: {
           nick: String(
-            message.member?.nickname ?? '',
+            message.member?.nickname ??
+            '',
           ),
 
           display_name: String(
             message.member?.displayName ??
-              message.author.globalName ??
-              message.author.username ??
-              '',
+            message.author.globalName ??
+            message.author.username ??
+            '',
           ),
         },
 
@@ -696,7 +792,9 @@ discordClient.on(
         mentions: [
           ...message.mentions.users.values(),
         ].map((user) => ({
-          id: String(user.id),
+          id: String(
+            user.id,
+          ),
 
           username: String(
             user.username ?? '',
@@ -710,7 +808,9 @@ discordClient.on(
         mentioned_roles: [
           ...message.mentions.roles.values(),
         ].map((role) => ({
-          id: String(role.id),
+          id: String(
+            role.id,
+          ),
 
           name: String(
             role.name ?? '',
@@ -755,9 +855,6 @@ discordClient.on(
           result.responseText,
         );
 
-        /*
-         * Chỉ báo lỗi cho người dùng khi webhook thật sự hỏng.
-         */
         if (
           result.status === 404 ||
           result.status >= 500
@@ -783,12 +880,6 @@ discordClient.on(
             result.responseText,
         },
       );
-
-      /*
-       * Không reply ở Render.
-       *
-       * n8n sẽ gửi câu trả lời qua HTTP Request Discord.
-       */
     } catch (error) {
       if (
         error?.name ===
@@ -823,13 +914,16 @@ discordClient.on(
 
 const app = express();
 
-app.disable('x-powered-by');
+app.disable(
+  'x-powered-by',
+);
 
 app.get(
   '/',
   (request, response) => {
     response.status(200).json({
-      status: 'running',
+      status:
+        'running',
 
       service:
         'discord-n8n-bot',
@@ -852,7 +946,8 @@ app.get(
   '/health',
   (request, response) => {
     response.status(200).json({
-      status: 'healthy',
+      status:
+        'healthy',
 
       discord_ready:
         discordClient.isReady(),
@@ -865,13 +960,11 @@ app.get(
         discordClient.user?.tag ??
         null,
 
-      guild_filter:
-        DISCORD_GUILD_ID ||
-        null,
+      guild_filters:
+        DISCORD_GUILD_IDS,
 
-      channel_filter:
-        DISCORD_CHANNEL_ID ||
-        null,
+      channel_filters:
+        DISCORD_CHANNEL_IDS,
 
       require_mention_in_guild:
         REQUIRE_MENTION_IN_GUILD,
@@ -907,7 +1000,9 @@ app.listen(
  * ======================================================= */
 
 discordClient
-  .login(DISCORD_TOKEN)
+  .login(
+    DISCORD_TOKEN,
+  )
   .catch((error) => {
     console.error(
       'Không đăng nhập được Discord:',
