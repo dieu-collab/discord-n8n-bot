@@ -187,6 +187,38 @@ function extractAttachments(message) {
   }));
 }
 
+function extractMentions(message) {
+  return [
+    ...message.mentions.users.values(),
+  ].map((user) => ({
+    id: String(
+      user.id,
+    ),
+
+    username: String(
+      user.username ?? '',
+    ),
+
+    bot: Boolean(
+      user.bot,
+    ),
+  }));
+}
+
+function extractMentionedRoles(message) {
+  return [
+    ...message.mentions.roles.values(),
+  ].map((role) => ({
+    id: String(
+      role.id,
+    ),
+
+    name: String(
+      role.name ?? '',
+    ),
+  }));
+}
+
 /*
  * Lấy các role được Discord quản lý của bot.
  */
@@ -411,6 +443,146 @@ async function sendToN8n(payload) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function isActionButton(customId) {
+  return /^(confirm|cancel):/i.test(
+    String(customId ?? ''),
+  );
+}
+
+function buildInteractionPayload(
+  interaction,
+) {
+  const user =
+    interaction.user ??
+    interaction.member?.user ??
+    null;
+
+  const message =
+    interaction.message ?? null;
+
+  return {
+    type: Number(
+      interaction.type ?? 0,
+    ),
+
+    id: String(
+      interaction.id ?? '',
+    ),
+
+    guild_id: String(
+      interaction.guildId ?? '',
+    ),
+
+    channel_id: String(
+      interaction.channelId ?? '',
+    ),
+
+    timestamp:
+      new Date().toISOString(),
+
+    author: {
+      id: String(
+        user?.id ?? '',
+      ),
+
+      username: String(
+        user?.username ?? '',
+      ),
+
+      global_name: String(
+        user?.globalName ?? '',
+      ),
+
+      bot: Boolean(
+        user?.bot,
+      ),
+    },
+
+    user: {
+      id: String(
+        user?.id ?? '',
+      ),
+
+      username: String(
+        user?.username ?? '',
+      ),
+
+      global_name: String(
+        user?.globalName ?? '',
+      ),
+
+      bot: Boolean(
+        user?.bot,
+      ),
+    },
+
+    member: {
+      nick: String(
+        interaction.member?.nickname ??
+        '',
+      ),
+
+      display_name: String(
+        interaction.member
+          ?.displayName ??
+        interaction.user
+          ?.globalName ??
+        interaction.user
+          ?.username ??
+        '',
+      ),
+    },
+
+    message: {
+      id: String(
+        message?.id ?? '',
+      ),
+
+      content: String(
+        message?.content ?? '',
+      ),
+    },
+
+    attachments:
+      message
+        ? extractAttachments(message)
+        : [],
+
+    mentions:
+      message
+        ? extractMentions(message)
+        : [],
+
+    mentioned_roles:
+      message
+        ? extractMentionedRoles(message)
+        : [],
+
+    data: {
+      component_type: Number(
+        interaction.componentType ??
+        0,
+      ),
+
+      custom_id: String(
+        interaction.customId ?? '',
+      ),
+    },
+
+    metadata: {
+      mentioned_bot: true,
+      mentioned_bot_user: true,
+      mentioned_bot_role: false,
+      replied_to_bot: false,
+      is_direct_message:
+        interaction.guildId ===
+        null,
+      source:
+        'discord-interaction-gateway-render',
+    },
+  };
 }
 
 /* =========================================================
@@ -789,33 +961,15 @@ discordClient.on(
 
         attachments,
 
-        mentions: [
-          ...message.mentions.users.values(),
-        ].map((user) => ({
-          id: String(
-            user.id,
+        mentions:
+          extractMentions(
+            message,
           ),
 
-          username: String(
-            user.username ?? '',
+        mentioned_roles:
+          extractMentionedRoles(
+            message,
           ),
-
-          bot: Boolean(
-            user.bot,
-          ),
-        })),
-
-        mentioned_roles: [
-          ...message.mentions.roles.values(),
-        ].map((role) => ({
-          id: String(
-            role.id,
-          ),
-
-          name: String(
-            role.name ?? '',
-          ),
-        })),
 
         metadata: {
           mentioned_bot:
@@ -904,6 +1058,132 @@ discordClient.on(
         'Lỗi khi xử lý tin Discord:',
         error,
       );
+    }
+  },
+);
+
+discordClient.on(
+  Events.InteractionCreate,
+  async (interaction) => {
+    try {
+      if (!interaction.isButton()) {
+        return;
+      }
+
+      const customId = String(
+        interaction.customId ?? '',
+      ).trim();
+
+      if (
+        !isActionButton(
+          customId,
+        )
+      ) {
+        return;
+      }
+
+      console.log('');
+      console.log(
+        '===== CÓ DISCORD INTERACTION =====',
+      );
+      console.log(
+        'Interaction ID:',
+        interaction.id,
+      );
+      console.log(
+        'Guild ID:',
+        interaction.guildId ??
+          'DM',
+      );
+      console.log(
+        'Channel ID:',
+        interaction.channelId,
+      );
+      console.log(
+        'User ID:',
+        interaction.user?.id ??
+          '',
+      );
+      console.log(
+        'Custom ID:',
+        customId,
+      );
+
+      await interaction.deferUpdate();
+
+      const payload =
+        buildInteractionPayload(
+          interaction,
+        );
+
+      console.log(
+        'Đang forward interaction sang n8n:',
+        N8N_WEBHOOK_URL,
+      );
+
+      const result =
+        await sendToN8n(
+          payload,
+        );
+
+      if (!result.ok) {
+        console.error(
+          'n8n trả về lỗi cho interaction:',
+          result.status,
+          result.responseText,
+        );
+
+        try {
+          await interaction.followUp({
+            content:
+              'Em nhận nút bấm rồi nhưng xử lý phía sau đang lỗi. Chị thử lại giúp em nhé.',
+            ephemeral: true,
+          });
+        } catch {
+          // Không làm gì thêm.
+        }
+
+        return;
+      }
+
+      console.log(
+        'Đã forward interaction sang n8n thành công:',
+        {
+          interactionId:
+            interaction.id,
+          customId,
+          status:
+            result.status,
+          response:
+            result.responseText,
+        },
+      );
+    } catch (error) {
+      console.error(
+        'Lỗi khi xử lý interaction Discord:',
+        error,
+      );
+
+      try {
+        if (
+          interaction.deferred ||
+          interaction.replied
+        ) {
+          await interaction.followUp({
+            content:
+              'Em nhận được nút bấm nhưng đang lỗi xử lý. Chị thử lại giúp em nhé.',
+            ephemeral: true,
+          });
+        } else {
+          await interaction.reply({
+            content:
+              'Em đang lỗi xử lý nút bấm. Chị thử lại giúp em nhé.',
+            ephemeral: true,
+          });
+        }
+      } catch {
+        // Không làm gì thêm.
+      }
     }
   },
 );
